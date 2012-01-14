@@ -1,4 +1,4 @@
-name := "PHP Code Analyzer"
+name := "Pecan"
 
 version := "1.0"
 
