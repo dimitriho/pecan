@@ -91,6 +91,7 @@ object PhpScanner extends StdLexical with PhpTokens {
   }
 
   def inlineHtml: Parser[Token] = {
+    //PHP files start with inline HTML
     val first = (html <~ (phpOpenTag | EofCh) ^^ { new InlineHtml(_) })
     val second = (phpCloseTag ~> html <~ (phpOpenTag | EofCh) ^^ { new InlineHtml(_) })
     new Parser[Token] {
