@@ -4,6 +4,10 @@ import scala.util.parsing.input.CharArrayReader
 import scala.util.parsing.combinator.token.StdTokens
 
 case class PhpScript()
+
+/**
+ * Statements
+ */
 abstract class Statement
 
 case class InlineHtml(code: String) extends Statement
@@ -13,16 +17,29 @@ abstract class ClassMemberDec
 case class AttributeDec(name: String, init: Option[Expression], modifiers: List[String]) extends ClassMemberDec
 case class MethodDec(name: String, isRef: Boolean, arguments: List[FunctionDecArg], body: Block, modifiers: List[String]) extends ClassMemberDec
 case class FunctionDec(name: String, isRef: Boolean, arguments: List[FunctionDecArg], body: Block) extends Statement
-
 case class FunctionDecArg(name: String, typeHint: Option[String], isRef: Boolean, init: Option[Expression])
-
+case class IfStmt(condition: Expression, trueStatement: Statement, falseStatement: Option[Statement]) extends Statement
+case class WhileStmt(condition: Expression, statement: Statement)
+case class DoWhileStmt(condition: Expression, statement: Statement)
+case class ForStmt(init: List[Expression], condition: Expression, increment: List[Expression], statement: Statement)
+case class ForeachStmt(haystack: Expression, key: Option[Variable], value: Variable, statement: Statement)
 case class BreakStmt() extends Statement
 case class ContinueStmt() extends Statement
 case class ReturnStmt(expr: Expression) extends Statement
 case class TryStmt(statement: Statement, catchStmts: List[CatchStmt]) extends Statement
 case class CatchStmt(variable: Variable, exceptionType: String, statement: Statement) extends Statement
 
-abstract class Expression extends Statement
+/**
+ * Expressions
+ */
+abstract class Expression
+abstract class Literal extends Expression
+case class NumberExpr(value: String) extends Literal
+case class StringExpr(value: String) extends Literal
+case class Constant(value: String) extends Literal
+case class NilExpr() extends Literal
+case class BooleanExpr(value: Boolean) extends Literal
+
 case class Assignment(variable: Variable, expr: Expression) extends Expression
 case class Variable(name: String) extends Expression
 
@@ -44,7 +61,9 @@ object PhpParser extends StandardTokenParsers {
   /**
    * Statements
    */
-  def statement: Parser[Statement] = inlineHtml | block | classDeclaration | functionDeclaration | tryCatchStmt /* |
+  def statement: Parser[Statement] = inlineHtml | block | classDeclaration |
+    functionDeclaration | tryCatchStmt | ifStmt | breakStmt | continueStmt |
+    returnStmt /* |
   	requireStmt | whileStmt | doStmt | forStmt | forEachStmt | switchStmt |
   	breakStmt | continueStmt | returnStmt | tryCatchStmt | throwStmt |
   	requireStmt | requireOnceStmt | includeStmt |
@@ -66,23 +85,39 @@ object PhpParser extends StandardTokenParsers {
 
   /* Function declaration */
   def functionDeclaration = "function" ~> opt("&") ~ ident ~ functionDecArgs ~ block ^^ { case isRef ~ name ~ functionArgs ~ block => new FunctionDec(name, isRef.isDefined, functionArgs, block) }
-  def functionDecArgs = "(" ~> repsep(arg, ",") <~ ")"
-
-  def arg = opt(typeHint) ~ opt("&") ~ variable ~ opt("=" ~> expr) ^^ { case typeHint ~ isRef ~ variable ~ init => new FunctionDecArg(variable.name, typeHint, isRef.isDefined, init) }
+  def functionDecArgs = "(" ~> repsep(functionDecArg, ",") <~ ")"
+  def functionDecArg = opt(typeHint) ~ opt("&") ~ variable ~ opt("=" ~> expr) ^^ { case typeHint ~ isRef ~ variable ~ init => new FunctionDecArg(variable.name, typeHint, isRef.isDefined, init) }
 
   /* Try / catch */
   def tryCatchStmt = "try" ~> block ~ rep1(catchStmt) ^^ { case block ~ catchStmts => new TryStmt(block, catchStmts) }
   def catchStmt = "catch" ~ "(" ~> ident ~ variable ~ ")" ~ "{" ~ statement <~ "}" ^^
     { case exceptionType ~ variable ~ ")" ~ "{" ~ statement => new CatchStmt(variable, exceptionType, statement) }
 
+  def ifStmt = "if" ~ "(" ~> expr ~ ")" ~ statement ~ opt("else" ~> statement) ^^ { case expr ~ ")" ~ stmt1 ~ stmt2 => new IfStmt(expr, stmt1, stmt2) }
+  def whileStmt = "while" ~ "(" ~> (expr <~ ")") ~ statement ^^ { case expr ~ stmt => new WhileStmt(expr, stmt) }
+  def doWhileStmt = "do" ~> (statement <~ "while" ~ "(") ~ expr <~ ")" ~ ";" ^^ { case stmt ~ expr => new DoWhileStmt(expr, stmt) }
+  def forStmt = "for" ~ "(" ~> (repsep(expr, ",") <~ ";") ~ (expr <~ ";") ~ (repsep(expr, ",") <~ ")") ~ statement ^^ { case init ~ cond ~ incr ~ stmt => new ForStmt(init, cond, incr, stmt) }
+  def forEachStmt = "foreach" ~ "(" ~> (expr <~ "as") ~ opt(variable <~ "=>") ~ (variable <~ ")") ~ statement ^^ { case expr ~ key ~ variable ~ stmt => new ForeachStmt(expr, key, variable, stmt) }
+  def breakStmt = "break" ~ ";" ^^ { _ => new BreakStmt }
+  def continueStmt = "continue" ~ ";" ^^ { _ => new ContinueStmt }
+  def returnStmt = "return" ~> expr <~ ";" ^^ { new ReturnStmt(_) }
+
   /**
    * Expressions
    */
-  def expr: Parser[Expression] = assignment | variable
-  /*(functionCall | numericLit | variableInc | stringLit |
-      assignment | const | variable | instanciation | methodCall) ~
+  def expr: Parser[Expression] = "(" ~> expr <~ ")" | literal | assignment | variable
+  /*(functionCall | const | instanciation | methodCall) ~
       opt(op | methodCall)*/
-  def assignment = variable ~ "=" ~ expr ^^ { case a ~ "=" ~ b => new Assignment(a, b) }
+  def literal = (
+    numericLit ^^ { new NumberExpr(_) }
+    | stringLit ^^ { new StringExpr(_) }
+    | "null" ^^ { _ => new NilExpr }
+    | "false" ^^ { _ => new BooleanExpr(false) }
+    | "true" ^^ { _ => new BooleanExpr(true) }
+    | (ident | "__CLASS__" | "__DIR__" | "__FILE__" | "__LINE__"
+      | "__FUNCTION__" | "__METHOD__" | "__NAMESPACE__") ^^ { new Constant(_) })
+
+  def assignment = (variable <~ "=") ~ expr ^^ { case a ~ b => new Assignment(a, b) }
   def variable = "$" ~> ident ^^ { new Variable(_) }
 
   def attributeMod = "public" | "protected" | "private" | "static" | "const"
@@ -91,25 +126,16 @@ object PhpParser extends StandardTokenParsers {
   def keywords = "isset" | "list" | "class"
 
   def typeHint = "array" | ident
-
-  def ifStmt = "if" ~ "(" ~ expr ~ ")" ~ statement ~ opt("else" ~ statement)
-  def ternaryStmt = expr ~ "?" ~ expr ~ ":" ~ expr <~ ";"
-  def whileStmt = "while" ~ "(" ~ expr ~ ")" ~ statement
-  def doStmt = "do" ~ statement ~ "while" ~ "(" ~ expr ~ ")" ~ ";"
-  def forStmt = "for" ~ "(" ~ expr ~ ";" ~ expr ~ ";" ~ expr ~ ")" ~ statement
-  def forEachStmt = "foreach" ~ "(" ~ expr ~ "as" ~ variable ~ ")" ~ statement
-  def switchStmt = "switch" ~ "(" ~ expr ~ ")" ~ "{" ~ caseStmt ~ "}"
+  def ternaryExpr = (expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";"
+  def switchStmt = "switch" ~ "(" ~> expr ~ ")" ~ "{" ~ caseStmt <~ "}"
   def caseStmt = ("case" ~ expr | "default") ~ ":" ~ opt(statement) ~ opt(breakStmt)
-  def breakStmt = "break" ~ ";" ^^ { _ => new BreakStmt }
-  def continueStmt = "continue" ~ ";" ^^ { _ => new ContinueStmt }
-  def returnStmt = "return" ~> expr <~ ";" ^^ { new ReturnStmt(_) }
   def throwStmt = "throw" ~> expr <~ ";"
   def requireStmt = "require" ~> stringLit <~ ";"
   def requireOnceStmt = "require_once" ~> stringLit <~ ";"
   def includeStmt = "include" ~> stringLit <~ ";"
   def includeOnceStmt = "include_once" ~> stringLit <~ ";"
   def echoStmt = "echo" ~> expr <~ ";"
-  def exprStmt = opt(expr) <~ ";"
+  def evalExprStmt = opt(expr) <~ ";"
 
   def instanciation = "new" ~> (rep("\\" ~ ident) | ident) ~ opt(callArgs)
 
@@ -119,9 +145,6 @@ object PhpParser extends StandardTokenParsers {
   def op = ("." | "+" | "^" | "-" | "<" | ">" | ">>" | "<<" | "==" | "===" | "!=" | "!==" | "<>" | ">=" | "<=") ~ expr
   def methodCall = "->" ~> ident ~ callArgs
   def variableInc = ("++" | "--") ~ variable | variable ~ ("++" | "--")
-
-  def const = ident | "__CLASS__" | "__DIR__" | "__FILE__" | "__LINE__" |
-    "__FUNCTION__" | "__METHOD__" | "__NAMESPACE__"
 
   def interfaceDef = "interface" ~> ident ~ "extends" ~ rep1sep(ident, ",")
 }
