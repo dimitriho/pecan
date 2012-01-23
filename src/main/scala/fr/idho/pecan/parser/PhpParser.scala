@@ -18,11 +18,13 @@ case class AttributeDec(name: String, init: Option[Expression], modifiers: List[
 case class MethodDec(name: String, isRef: Boolean, arguments: List[FunctionDecArg], body: Block, modifiers: List[String]) extends ClassMemberDec
 case class FunctionDec(name: String, isRef: Boolean, arguments: List[FunctionDecArg], body: Block) extends Statement
 case class FunctionDecArg(name: String, typeHint: Option[String], isRef: Boolean, init: Option[Expression])
+
+/* Control structures */
 case class IfStmt(condition: Expression, trueStatement: Statement, falseStatement: Option[Statement]) extends Statement
-case class WhileStmt(condition: Expression, statement: Statement)
-case class DoWhileStmt(condition: Expression, statement: Statement)
-case class ForStmt(init: List[Expression], condition: Expression, increment: List[Expression], statement: Statement)
-case class ForeachStmt(haystack: Expression, key: Option[Variable], value: Variable, statement: Statement)
+case class WhileStmt(condition: Expression, statement: Statement) extends Statement
+case class DoWhileStmt(condition: Expression, statement: Statement) extends Statement
+case class ForStmt(init: List[Expression], condition: Expression, increment: List[Expression], statement: Statement) extends Statement
+case class ForeachStmt(haystack: Expression, key: Option[Variable], value: Variable, statement: Statement) extends Statement
 case class BreakStmt() extends Statement
 case class ContinueStmt() extends Statement
 case class ReturnStmt(expr: Expression) extends Statement
@@ -62,10 +64,10 @@ object PhpParser extends StandardTokenParsers {
    * Statements
    */
   def statement: Parser[Statement] = inlineHtml | block | classDeclaration |
-    functionDeclaration | tryCatchStmt | ifStmt | breakStmt | continueStmt |
-    returnStmt /* |
-  	requireStmt | whileStmt | doStmt | forStmt | forEachStmt | switchStmt |
-  	breakStmt | continueStmt | returnStmt | tryCatchStmt | throwStmt |
+    functionDeclaration | tryCatchStmt | ifStmt | whileStmt | doWhileStmt |
+    forStmt | forEachStmt | breakStmt | continueStmt | returnStmt /* |
+  	requireStmt |  | switchStmt |
+  	tryCatchStmt | throwStmt |
   	requireStmt | requireOnceStmt | includeStmt |
     includeOnceStmt | exprStmt | echoStmt | inlineHtml */
 
@@ -93,6 +95,7 @@ object PhpParser extends StandardTokenParsers {
   def catchStmt = "catch" ~ "(" ~> ident ~ variable ~ ")" ~ "{" ~ statement <~ "}" ^^
     { case exceptionType ~ variable ~ ")" ~ "{" ~ statement => new CatchStmt(variable, exceptionType, statement) }
 
+  /* Control structures */
   def ifStmt = "if" ~ "(" ~> expr ~ ")" ~ statement ~ opt("else" ~> statement) ^^ { case expr ~ ")" ~ stmt1 ~ stmt2 => new IfStmt(expr, stmt1, stmt2) }
   def whileStmt = "while" ~ "(" ~> (expr <~ ")") ~ statement ^^ { case expr ~ stmt => new WhileStmt(expr, stmt) }
   def doWhileStmt = "do" ~> (statement <~ "while" ~ "(") ~ expr <~ ")" ~ ";" ^^ { case stmt ~ expr => new DoWhileStmt(expr, stmt) }
