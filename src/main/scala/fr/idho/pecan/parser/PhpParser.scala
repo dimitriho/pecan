@@ -2,6 +2,7 @@ package fr.idho.pecan.parser
 import scala.util.parsing.combinator.syntactical.StandardTokenParsers
 import scala.util.parsing.input.CharArrayReader
 import scala.util.parsing.combinator.token.StdTokens
+import scala.util.parsing.combinator.lexical.StdLexical
 
 case class PhpScript()
 
@@ -10,6 +11,7 @@ case class PhpScript()
  */
 abstract class Statement
 
+case class EmptyStatement() extends Statement
 case class InlineHtml(code: String) extends Statement
 case class Block(statements: List[Statement]) extends Statement
 case class ClassDeclaration(className: String,
@@ -68,7 +70,7 @@ case class CaseStmt(expr: Expression, stmt: Statement) extends AbstractCaseStmt
 /**
  * Expressions
  */
-abstract class Expression
+abstract class Expression extends Statement
 abstract class Literal extends Expression
 case class NumberExpr(value: String) extends Literal
 case class StringExpr(value: String) extends Literal
@@ -81,8 +83,8 @@ case class Variable(name: String) extends Expression
 case class FunctionCall(function: String,
                         expr: List[Expression]) extends Expression
 
-object PhpParser extends StandardTokenParsers {
-  override val lexical = PhpScanner
+class PhpParser(val scanner: PhpScanner = new PhpScanner) extends StandardTokenParsers {
+  override val lexical = scanner
 
   def parse(s: String) = {
     val tokens = new lexical.Scanner(s)
@@ -101,7 +103,8 @@ object PhpParser extends StandardTokenParsers {
    */
   def statement: Parser[Statement] = inlineHtml | block | classDeclaration |
     functionDeclaration | tryCatchStmt | ifStmt | whileStmt | doWhileStmt |
-    forStmt | forEachStmt | breakStmt | continueStmt | switchStmt
+    forStmt | forEachStmt | breakStmt | continueStmt | switchStmt | 
+    expr <~ ";" | (";" ^^ (_ => new EmptyStatement))
   /* |
   	requireStmt |
   	requireStmt | requireOnceStmt | includeStmt |
@@ -214,7 +217,7 @@ object PhpParser extends StandardTokenParsers {
     "return" |
     "print" |
     "unset") ~
-    expr <~ ";" ^^
+    expr ^^
     {
       case function ~ expr =>
         new FunctionCall(function, expr :: Nil)

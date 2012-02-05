@@ -2,14 +2,14 @@ package fr.idho.pecan.parser
 import scala.util.parsing.combinator.lexical.StdLexical
 import scala.util.parsing.input.CharArrayReader.EofCh
 
-object PhpScanner extends StdLexical with PhpTokens {
-  delimiters ++= "- + * / %".split(" ") // Arithmetic operators
-  delimiters ++= "++ -- -= += *= /= %=".split(" ")
-  delimiters ++= "& | ^ >> <<".split(" ")
-  delimiters ++= "&= |= ^= >>= <<= ".split(" ")
-  delimiters ++= ". $".split(" ")
-  delimiters ++= "== === != <> !== < > <= >=".split(" ")
-  delimiters ++= "= ; , ( ) [ ] { } -> => \\".split(" ")
+class PhpScanner(val startInline: Boolean = true) extends StdLexical with PhpTokens {
+  delimiters ++= ("- + * / %"
+    + " ++ -- -= += *= /= %="
+    + " & | ^ >> <<"
+    + " &= |= ^= >>= <<="
+    + " . $"
+    + " == === != <> !== < > <= >="
+    + " = ; , ( ) [ ] { } -> => \\").split(" ")
 
   reserved ++= Array(
     //Keywords
@@ -96,7 +96,7 @@ object PhpScanner extends StdLexical with PhpTokens {
     val second = (phpCloseTag ~> html <~ (phpOpenTag | EofCh) ^^ { new InlineHtml(_) })
     new Parser[Token] {
       def apply(in: Input) = {
-        if (in.offset == 0)
+        if (startInline && in.offset == 0)
           first(in)
         else
           second(in)
