@@ -7,6 +7,8 @@ import scala.util.parsing.input.Positional
 
 case class PhpScript(statements: List[Statement]) extends Positional
 
+case class Identifier(name: String) extends Positional
+
 /**
  * Statements
  */
@@ -15,26 +17,26 @@ abstract class Statement extends Positional
 case class EmptyStatement() extends Statement
 case class InlineHtml(code: String) extends Statement
 case class Block(statements: List[Statement]) extends Statement
-case class ClassDeclaration(className: String,
-                            parent: Option[String],
-                            interfaces: List[String],
+case class ClassDeclaration(className: Identifier,
+                            parent: Option[Identifier],
+                            interfaces: List[Identifier],
                             members: List[ClassMemberDec],
-                            modifier: Option[String]) extends Statement
+                            modifier: Option[Identifier]) extends Statement
 abstract class ClassMemberDec extends Positional
-case class AttributeDec(name: String,
+case class AttributeDec(name: Variable,
                         init: Option[Expression],
-                        modifiers: List[String]) extends ClassMemberDec
-case class MethodDec(name: String,
+                        modifiers: List[Identifier]) extends ClassMemberDec
+case class MethodDec(name: Identifier,
                      isRef: Boolean,
                      arguments: List[FunctionDecArg],
                      body: Block,
-                     modifiers: List[String]) extends ClassMemberDec
-case class FunctionDec(name: String,
+                     modifiers: List[Identifier]) extends ClassMemberDec
+case class FunctionDec(name: Identifier,
                        isRef: Boolean,
                        arguments: List[FunctionDecArg],
                        body: Block) extends Statement
-case class FunctionDecArg(name: String,
-                          typeHint: Option[String],
+case class FunctionDecArg(name: Variable,
+                          typeHint: Option[Identifier],
                           isRef: Boolean,
                           init: Option[Expression]) extends Positional
 
@@ -60,7 +62,7 @@ case class ReturnStmt(expr: Expression) extends Statement
 case class TryStmt(statement: Statement,
                    catchStmts: List[CatchStmt]) extends Statement
 case class CatchStmt(variable: Variable,
-                     exceptionType: String,
+                     exceptionType: Identifier,
                      statement: Statement) extends Statement
 case class SwitchStmt(expr: Expression,
                       caseStmts: List[AbstractCaseStmt]) extends Statement
@@ -81,10 +83,12 @@ case class BooleanExpr(value: Boolean) extends Literal
 
 case class Assignment(variable: Variable, expr: Expression) extends Expression
 case class Variable(name: String) extends Expression
-case class FunctionCall(function: String,
+case class FunctionCall(function: Identifier,
                         expr: List[Expression]) extends Expression
 
-class PhpParser(val scanner: PhpScanner = new PhpScanner) extends StandardTokenParsers {
+class PhpParser(val scanner: PhpScanner = new PhpScanner)
+  extends StandardTokenParsers {
+
   override val lexical = scanner
 
   def parse(s: String) = {
@@ -117,26 +121,26 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner) extends StandardTokenP
   def block = positioned("{" ~> rep(statement) <~ "}" ^^ { new Block(_) })
 
   /* Class declaration */
-  def classDeclaration = positioned(opt(classMod) ~ "class" ~ ident ~
-    opt("extends" ~> ident) ~ interfaces ~ members ^^
+  def classDeclaration = positioned(opt(classMod) ~ "class" ~ identifier ~
+    opt("extends" ~> identifier) ~ interfaces ~ members ^^
     {
       case classMod ~ "class" ~ className ~ parent ~ interfaces ~ members =>
         new ClassDeclaration(className, parent, interfaces, members, classMod)
     })
-  def interfaces = opt("implements" ~> rep1sep(ident, ",")) ^^
+  def interfaces = opt("implements" ~> rep1sep(identifier, ",")) ^^
     { _.getOrElse(Nil) }
   def members = "{" ~> rep(method | attribute) <~ "}"
   /* Class members */
   def attribute = positioned((attributeMod*) ~ variable ~ opt("=" ~> expr) <~ ";" ^^
     {
       case modifiers ~ variable ~ init =>
-        new AttributeDec(variable.name, init, modifiers)
+        new AttributeDec(variable, init, modifiers)
     }) //TODO: not all expr are valid
   def method = positioned((methodMod*) ~ functionDeclaration ^^
     { case a ~ b => new MethodDec(b.name, b.isRef, b.arguments, b.body, a) })
 
   /* Function declaration */
-  def functionDeclaration = positioned("function" ~> opt("&") ~ ident ~ functionDecArgs ~ block ^^
+  def functionDeclaration = positioned("function" ~> opt("&") ~ identifier ~ functionDecArgs ~ block ^^
     {
       case isRef ~ name ~ functionArgs ~ block =>
         new FunctionDec(name, isRef.isDefined, functionArgs, block)
@@ -145,13 +149,13 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner) extends StandardTokenP
   def functionDecArg = positioned(opt(typeHint) ~ opt("&") ~ variable ~ opt("=" ~> expr) ^^
     {
       case typeHint ~ isRef ~ variable ~ init =>
-        new FunctionDecArg(variable.name, typeHint, isRef.isDefined, init)
+        new FunctionDecArg(variable, typeHint, isRef.isDefined, init)
     })
 
   /* Try / catch */
   def tryCatchStmt = positioned("try" ~> block ~ rep1(catchStmt) ^^
     { case block ~ catchStmts => new TryStmt(block, catchStmts) })
-  def catchStmt = positioned("catch" ~ "(" ~> ident ~ variable ~ ")" ~ "{" ~ statement <~ "}" ^^
+  def catchStmt = positioned("catch" ~ "(" ~> identifier ~ variable ~ ")" ~ "{" ~ statement <~ "}" ^^
     {
       case exceptionType ~ variable ~ ")" ~ "{" ~ statement =>
         new CatchStmt(variable, exceptionType, statement)
@@ -191,17 +195,17 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner) extends StandardTokenP
       opt(op | methodCall)*/
   def literal = positioned(
     numericLit ^^ { new NumberExpr(_) }
-    | stringLit ^^ { new StringExpr(_) }
-    | "null" ^^ { _ => new NilExpr }
-    | "false" ^^ { _ => new BooleanExpr(false) }
-    | "true" ^^ { _ => new BooleanExpr(true) }
-    | (ident | "__CLASS__" | "__DIR__" | "__FILE__" | "__LINE__"
-      | "__FUNCTION__" | "__METHOD__" | "__NAMESPACE__") ^^ { new Constant(_) })
+      | stringLit ^^ { new StringExpr(_) }
+      | "null" ^^ { _ => new NilExpr }
+      | "false" ^^ { _ => new BooleanExpr(false) }
+      | "true" ^^ { _ => new BooleanExpr(true) }
+      | (ident | "__CLASS__" | "__DIR__" | "__FILE__" | "__LINE__"
+        | "__FUNCTION__" | "__METHOD__" | "__NAMESPACE__") ^^ { new Constant(_) })
 
   def assignment = positioned((variable <~ "=") ~ expr ^^
     { case a ~ b => new Assignment(a, b) })
   def variable = positioned("$" ~> ident ^^ { new Variable(_) })
-  def languageContruct = positioned(("die" |
+  def languageContruct = positioned(identifier("die" |
     //    "echo" |
     "empty" |
     "exit" |
@@ -221,23 +225,26 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner) extends StandardTokenP
         new FunctionCall(function, expr :: Nil)
     })
 
-  def attributeMod = "public" | "protected" | "private" | "static" | "const"
-  def methodMod = "public" | "protected" | "private" | "static" | "abstract" | "final"
-  def classMod = "abstract" | "final"
+  def identifier = positioned(ident ^^ { new Identifier(_) })
+  def identifier(p: Parser[String]) = positioned(p ^^ { new Identifier(_) })
 
-  def typeHint = "array" | ident
+  def attributeMod = identifier("public" | "protected" | "private" | "static" | "const")
+  def methodMod = identifier("public" | "protected" | "private" | "static" | "abstract" | "final")
+  def classMod = identifier("abstract" | "final")
+
+  def typeHint = identifier("array") | identifier
   def ternaryExpr = (expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";"
 
-  def instanciation = "new" ~> (rep("\\" ~ ident) | ident) ~ opt(callArgs)
+  def instanciation = "new" ~> (rep("\\" ~ identifier) | identifier) ~ opt(callArgs)
 
-  def functionCall = (rep("\\" ~ ident) | ident) ~ callArgs
+  def functionCall = (rep("\\" ~ identifier) | identifier) ~ callArgs
   def callArgs = "(" ~ repsep(expr, ",") ~ ")"
 
   def op = ("." | "+" | "^" | "-" | "<" | ">" | ">>" | "<<" | "==" | "===" |
     "!=" | "!==" | "<>" | ">=" | "<=") ~ expr
-  def methodCall = "->" ~> ident ~ callArgs
+  def methodCall = "->" ~> identifier ~ callArgs
   def variableInc = ("++" | "--") ~ variable | variable ~ ("++" | "--")
 
-  def interfaceDef = "interface" ~> ident ~ "extends" ~ rep1sep(ident, ",")
+  def interfaceDef = "interface" ~> identifier ~ "extends" ~ rep1sep(identifier, ",")
 }
 
