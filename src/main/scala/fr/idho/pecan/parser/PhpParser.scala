@@ -83,8 +83,11 @@ case class BooleanExpr(value: Boolean) extends Literal
 
 case class Assignment(variable: Variable, expr: Expression) extends Expression
 case class Variable(name: String) extends Expression
-case class FunctionCall(function: Identifier,
+case class FunctionCall(function: String,
                         expr: List[Expression]) extends Expression
+case class TernaryExpression(condition: Expression,
+                             trueExpression: Option[Expression],
+                             falseExpression: Expression) extends Expression
 
 class PhpParser(val scanner: PhpScanner = new PhpScanner)
   extends StandardTokenParsers {
@@ -190,7 +193,7 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
    * Expressions
    */
   def expr: Parser[Expression] = "(" ~> expr <~ ")" | literal | assignment |
-    variable | languageContruct
+    variable | languageContruct | ternaryExpr
   /*(functionCall | instanciation | methodCall) ~
       opt(op | methodCall)*/
   def literal = positioned(
@@ -205,7 +208,7 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
   def assignment = positioned((variable <~ "=") ~ expr ^^
     { case a ~ b => new Assignment(a, b) })
   def variable = positioned("$" ~> ident ^^ { new Variable(_) })
-  def languageContruct = positioned(identifier("die" |
+  def languageContruct = positioned(("die" |
     //    "echo" |
     "empty" |
     "exit" |
@@ -224,6 +227,10 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
       case function ~ expr =>
         new FunctionCall(function, expr :: Nil)
     })
+  def ternaryExpr = (expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";" ^^
+    {
+      case cond ~ trueExpr ~ falseExpr => new TernaryExpression(cond, trueExpr, falseExpr)
+    }
 
   def identifier = positioned(ident ^^ { new Identifier(_) })
   def identifier(p: Parser[String]) = positioned(p ^^ { new Identifier(_) })
@@ -233,7 +240,6 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
   def classMod = identifier("abstract" | "final")
 
   def typeHint = identifier("array") | identifier
-  def ternaryExpr = (expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";"
 
   def instanciation = "new" ~> (rep("\\" ~ identifier) | identifier) ~ opt(callArgs)
 
