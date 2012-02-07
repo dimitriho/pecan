@@ -8,7 +8,7 @@ import scala.util.parsing.input.Positional
 case class PhpScript(statements: List[Statement]) extends Positional
 
 case class Identifier(name: String) extends Positional
-case class NamespacedIdentifier(name: String, path: List[String], fromRoot: Boolean) extends Positional
+case class QualifiedName(name: String, path: List[String], full: Boolean) extends Positional
 
 /**
  * Statements
@@ -84,12 +84,12 @@ case class BooleanExpr(value: Boolean) extends Literal
 
 case class Assignment(variable: Variable, expr: Expression) extends Expression
 case class Variable(name: String) extends Expression
-case class FunctionCall(function: NamespacedIdentifier,
+case class FunctionCall(function: QualifiedName,
                         arguments: List[Expression]) extends Expression
 case class TernaryExpression(condition: Expression,
                              trueExpression: Option[Expression],
                              falseExpression: Expression) extends Expression
-case class Instanciation(classname: NamespacedIdentifier,
+case class Instanciation(classname: QualifiedName,
                          arguments: List[Expression]) extends Expression
 
 class PhpParser(val scanner: PhpScanner = new PhpScanner)
@@ -228,19 +228,19 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
     expr ^^
     {
       case name ~ expr =>
-        new FunctionCall(new NamespacedIdentifier(name, Nil, false), expr :: Nil)
+        new FunctionCall(new QualifiedName(name, Nil, false), expr :: Nil)
     })
   def ternaryExpr = positioned((expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";" ^^
     {
       case cond ~ trueExpr ~ falseExpr => new TernaryExpression(cond, trueExpr, falseExpr)
     })
 
-  def functionCall = positioned(namespacedIdentifier ~ callArgs ^^
+  def functionCall = positioned(qualifiedName ~ callArgs ^^
     {
       case name ~ args => new FunctionCall(name, args)
     })
 
-  def instanciation = positioned("new" ~> namespacedIdentifier ~ opt(callArgs) ^^
+  def instanciation = positioned("new" ~> qualifiedName ~ opt(callArgs) ^^
   {
     case classname ~ args => new Instanciation(classname, args.getOrElse(Nil))
   })
@@ -249,9 +249,9 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
   def identifier = positioned(ident ^^ { new Identifier(_) })
   def identifier(p: Parser[String]) = positioned(p ^^ { new Identifier(_) })
 
-  def namespacedIdentifier = positioned(opt("\\") ~ rep(ident <~ "\\") ~ ident ^^
+  def qualifiedName = positioned(opt("\\") ~ rep(ident <~ "\\") ~ ident ^^
     {
-      case root ~ path ~ name => new NamespacedIdentifier(name, path, root.isDefined)
+      case root ~ path ~ name => new QualifiedName(name, path, root.isDefined)
     })
 
   def attributeMod = identifier("public" | "protected" | "private" | "static" | "const")
