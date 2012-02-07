@@ -3,9 +3,10 @@ import scala.util.parsing.combinator.syntactical.StandardTokenParsers
 import scala.util.parsing.input.CharArrayReader
 import scala.util.parsing.combinator.token.StdTokens
 import scala.util.parsing.combinator.lexical.StdLexical
+import scala.util.parsing.combinator.PackratParsers
 
 class PhpParser(val scanner: PhpScanner = new PhpScanner)
-  extends StandardTokenParsers {
+  extends StandardTokenParsers with PackratParsers {
 
   override val lexical = scanner
 
@@ -142,7 +143,7 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
       case name ~ expr =>
         new FunctionCall(new QualifiedName(name, Nil, false), expr :: Nil)
     })
-  def ternaryExpr = positioned((expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";" ^^
+  lazy val ternaryExpr : PackratParser[TernaryExpression] = positioned((expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";" ^^
     {
       case cond ~ trueExpr ~ falseExpr => new TernaryExpression(cond, trueExpr, falseExpr)
     })
