@@ -249,10 +249,10 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
   def identifier = positioned(ident ^^ { new Identifier(_) })
   def identifier(p: Parser[String]) = positioned(p ^^ { new Identifier(_) })
 
-  def namespacedIdentifier = opt("\\") ~ rep(ident <~ "\\") ~ ident ^^
+  def namespacedIdentifier = positioned(opt("\\") ~ rep(ident <~ "\\") ~ ident ^^
     {
       case root ~ path ~ name => new NamespacedIdentifier(name, path, root.isDefined)
-    }
+    })
 
   def attributeMod = identifier("public" | "protected" | "private" | "static" | "const")
   def methodMod = identifier("public" | "protected" | "private" | "static" | "abstract" | "final")
