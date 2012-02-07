@@ -79,6 +79,8 @@ case class NilExpr() extends Literal
 case class BooleanExpr(value: Boolean) extends Literal
 
 case class Assignment(variable: Variable, expr: Expression) extends Expression
+case class BinaryOperation(operator: Identifier, lhs: Expression, rhs: Expression) extends Expression
+case class UnaryOperation(operator: Identifier, expression: Expression) extends Expression
 case class Variable(name: String) extends Expression
 case class FunctionCall(function: QualifiedName,
                         arguments: List[Expression]) extends Expression

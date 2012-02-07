@@ -108,10 +108,9 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
   /**
    * Expressions
    */
-  def expr: Parser[Expression] = "(" ~> expr <~ ")" | literal | assignment |
+  def expr: Parser[Expression] = binOp | "(" ~> expr <~ ")" | literal | assignment |
     variable | languageContruct | ternaryExpr | functionCall | instanciation
-  /*(| methodCall) ~
-      opt(op | methodCall)*/
+     //| methodCall
   def literal = positioned(
     numericLit ^^ { new NumberExpr(_) }
       | stringLit ^^ { new StringExpr(_) }
@@ -143,9 +142,15 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
       case name ~ expr =>
         new FunctionCall(new QualifiedName(name, Nil, false), expr :: Nil)
     })
-  lazy val ternaryExpr : PackratParser[TernaryExpression] = positioned((expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";" ^^
+  lazy val ternaryExpr: PackratParser[TernaryExpression] = positioned((expr <~ "?") ~ (opt(expr) <~ ":") ~ expr <~ ";" ^^
     {
       case cond ~ trueExpr ~ falseExpr => new TernaryExpression(cond, trueExpr, falseExpr)
+    })
+
+  //FIXME: associativity and precedence of operators
+  lazy val binOp: PackratParser[BinaryOperation] = positioned(expr ~ op ~ expr ^^
+    {
+      case lhs ~ op ~ rhs => new BinaryOperation(op, lhs, rhs)
     })
 
   def functionCall = positioned(qualifiedName ~ callArgs ^^
@@ -173,9 +178,9 @@ class PhpParser(val scanner: PhpScanner = new PhpScanner)
 
   def typeHint = identifier("array") | identifier
 
-  def op = ("." | "+" | "^" | "-" | "<" | ">" | ">>" | "<<" | "==" | "===" |
-    "!=" | "!==" | "<>" | ">=" | "<=") ~ expr
-  def methodCall = "->" ~> identifier ~ callArgs
+  def op = identifier("." | "+" | "^" | "-" | "<" | ">" | ">>" | "<<" | "==" | "===" |
+    "!=" | "!==" | "<>" | ">=" | "<=")
+  //def methodCall = variable "->" ~> identifier ~ callArgs
   def variableInc = ("++" | "--") ~ variable | variable ~ ("++" | "--")
 
   def interfaceDef = "interface" ~> identifier ~ "extends" ~ rep1sep(identifier, ",")
